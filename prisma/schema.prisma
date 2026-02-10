@@ -1,0 +1,382 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SyncEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  eventId    String   @unique @map("event_id")
+  type       String
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+  source     String
+  payload    Json
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([occurredAt, eventId], name: "idx_sync_events_occurred")
+  @@index([status], name: "idx_sync_events_status")
+  @@map("sync_events")
+}
+
+model PosEventAck {
+  posId     String   @map("pos_id")
+  eventId   String   @map("event_id")
+  appliedAt DateTime @default(now()) @map("applied_at") @db.Timestamptz(6)
+
+  @@id([posId, eventId])
+  @@index([posId], name: "idx_ack_pos")
+  @@map("pos_event_ack")
+}
+
+model Order {
+  id        String   @id @default(uuid()) @db.Uuid
+  orderId   String   @unique @map("order_id")
+  status    String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  payload   Json
+
+  @@map("orders")
+}
+
+model ReadModelInventory {
+  productId         String   @id @map("product_id")
+  slug              String?  @map("slug")
+  available         Int      @default(0)
+  updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  displayName       String?  @map("display_name")
+  shortDescription  String?  @map("short_description")
+  description       String?  @map("description")
+  rarity            String?  @map("rarity")
+  tags              Json?    @map("tags")
+  isActive          Boolean  @default(true) @map("is_active")
+  imageUrl          String?  @map("image_url")
+  category          String?
+  categoryId        String?  @map("category_id") @db.Uuid
+  gameId            String?  @map("game_id") @db.Uuid
+  expansionId       String?  @map("expansion_id") @db.Uuid
+  price             Decimal? @map("price")
+  game              String?
+  availabilityState String?  @map("availability_state")
+  lastSyncedAt      DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  isFeatured        Boolean  @default(false) @map("is_featured")
+  featuredOrder     Int?     @map("featured_order")
+
+  @@index([categoryId], name: "idx_read_model_category_id")
+  @@index([gameId], name: "idx_read_model_game_id")
+  @@map("read_model_inventory")
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum CatalogTaxonomyType {
+  CATEGORY
+  GAME
+  EXPANSION
+  OTHER
+}
+
+enum CatalogEntityType {
+  PRODUCT
+  TAXONOMY
+}
+
+enum CatalogAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum PreorderDraftStatus {
+  ACTIVE
+  CONVERTED
+  EXPIRED
+}
+
+enum OnlineOrderStatus {
+  CREATED
+  PENDING_PAYMENT
+  PAID
+  READY_FOR_PICKUP
+  SHIPPED
+  CANCELED
+  CANCELLED_EXPIRED
+  CANCELLED_MANUAL
+}
+
+enum PaymentMethod {
+  PAY_IN_STORE
+}
+
+enum InventoryReservationStatus {
+  ACTIVE
+  RELEASED
+}
+
+model User {
+  id         String      @id @default(uuid()) @db.Uuid
+  email      String?     @unique
+  phone      String?     @unique
+  firstName  String?     @map("first_name")
+  lastName   String?     @map("last_name")
+  passwordHash String?   @map("password_hash")
+  passwordUpdatedAt DateTime? @map("password_updated_at") @db.Timestamptz(6)
+  birthDate  DateTime?   @map("birth_date") @db.Date
+  role       UserRole    @default(CUSTOMER)
+  status     UserStatus  @default(ACTIVE)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  lastLoginAt     DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  addresses  Address[]
+  magicLinks MagicLinkToken[]
+  refreshTokens RefreshToken[]
+  inventoryAdjustments InventoryAdjustment[] @relation("InventoryAdjustmentActor")
+  catalogAuditLogs CatalogAuditLog[]
+  preorderDrafts PreorderDraft[]
+  onlineOrders OnlineOrder[]
+  cancelledOrders OnlineOrder[] @relation("OnlineOrderCancelledBy")
+  orderStatusLogs OnlineOrderStatusLog[] @relation("OnlineOrderStatusLogActor")
+
+  @@map("users")
+}
+
+model Address {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  street         String
+  externalNumber String   @map("external_number")
+  internalNumber String?  @map("internal_number")
+  postalCode     String   @map("postal_code")
+  neighborhood   String
+  city           String
+  state          String
+  country        String
+  references     String?  @map("address_references")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_user_addresses_user")
+  @@map("user_addresses")
+}
+
+model MagicLinkToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_magic_links_user")
+  @@index([expiresAt], name: "idx_magic_links_expires")
+  @@map("magic_link_tokens")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_refresh_tokens_user")
+  @@index([expiresAt], name: "idx_refresh_tokens_expires")
+  @@map("refresh_tokens")
+}
+
+model CatalogTaxonomy {
+  id          String              @id @default(uuid()) @db.Uuid
+  type        CatalogTaxonomyType
+  name        String
+  slug        String              @unique
+  parentId    String?             @map("parent_id") @db.Uuid
+  releaseDate DateTime?           @map("release_date") @db.Date
+  description String?
+  labels      Json?               @map("labels")
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  parent      CatalogTaxonomy?    @relation("CatalogTaxonomyParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children    CatalogTaxonomy[]   @relation("CatalogTaxonomyParent")
+
+  @@index([type], name: "idx_catalog_taxonomies_type")
+  @@index([parentId], name: "idx_catalog_taxonomies_parent")
+  @@map("catalog_taxonomies")
+}
+
+model PickupBranch {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  address   String
+  city      String
+  latitude  Decimal  @db.Decimal(10, 6)
+  longitude Decimal  @db.Decimal(10, 6)
+  imageUrl  String?  @map("image_url")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  orders OnlineOrder[]
+
+  @@index([city], name: "idx_pickup_branches_city")
+  @@map("pickup_branches")
+}
+
+model PreorderDraft {
+  id        String             @id @default(uuid()) @db.Uuid
+  userId    String             @map("user_id") @db.Uuid
+  status    PreorderDraftStatus @default(ACTIVE)
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     PreorderDraftItem[]
+  order     OnlineOrder?       @relation("PreorderDraftOrder")
+
+  @@index([userId, status], name: "idx_preorder_drafts_user_status")
+  @@map("preorder_drafts")
+}
+
+model PreorderDraftItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  draftId             String   @map("draft_id") @db.Uuid
+  productId           String   @map("product_id")
+  quantity            Int
+  priceSnapshot       Decimal  @map("price_snapshot")
+  currency            String   @default("MXN")
+  availabilitySnapshot String  @map("availability_snapshot")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  draft               PreorderDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@index([draftId], name: "idx_preorder_items_draft")
+  @@index([productId], name: "idx_preorder_items_product")
+  @@map("preorder_draft_items")
+}
+
+model OnlineOrder {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  draftId        String           @map("draft_id") @db.Uuid
+  status         OnlineOrderStatus @default(PENDING_PAYMENT)
+  statusUpdatedAt DateTime        @default(now()) @map("status_updated_at") @db.Timestamptz(6)
+  cancelReason   String?          @map("cancel_reason")
+  cancelledByUserId String?       @map("cancelled_by_user_id") @db.Uuid
+  paymentMethod  PaymentMethod    @map("payment_method")
+  pickupBranchId String?          @map("pickup_branch_id") @db.Uuid
+  subtotal       Decimal          @map("subtotal")
+  currency       String           @default("MXN")
+  expiresAt      DateTime         @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  draft          PreorderDraft    @relation("PreorderDraftOrder", fields: [draftId], references: [id], onDelete: Restrict)
+  pickupBranch   PickupBranch?    @relation(fields: [pickupBranchId], references: [id], onDelete: SetNull)
+  cancelledBy    User?            @relation("OnlineOrderCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  items          OnlineOrderItem[]
+  reservations   InventoryReservation[]
+  statusLogs     OnlineOrderStatusLog[]
+
+  @@index([userId], name: "idx_online_orders_user")
+  @@index([status], name: "idx_online_orders_status")
+  @@index([expiresAt], name: "idx_online_orders_expires")
+  @@index([cancelledByUserId], name: "idx_online_orders_cancelled_by")
+  @@unique([draftId], name: "uniq_online_order_draft")
+  @@map("online_orders")
+}
+
+model OnlineOrderItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  orderId             String   @map("order_id") @db.Uuid
+  productId           String   @map("product_id")
+  quantity            Int
+  priceSnapshot       Decimal  @map("price_snapshot")
+  currency            String   @default("MXN")
+  availabilitySnapshot String  @map("availability_snapshot")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  order               OnlineOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId], name: "idx_online_order_items_order")
+  @@map("online_order_items")
+}
+
+model InventoryReservation {
+  id        String                    @id @default(uuid()) @db.Uuid
+  orderId   String                    @map("order_id") @db.Uuid
+  productId String                    @map("product_id")
+  quantity  Int
+  status    InventoryReservationStatus @default(ACTIVE)
+  expiresAt DateTime                  @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  releasedAt DateTime?                @map("released_at") @db.Timestamptz(6)
+  order     OnlineOrder               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId], name: "idx_inventory_reservation_order")
+  @@index([status], name: "idx_inventory_reservation_status")
+  @@index([expiresAt], name: "idx_inventory_reservation_expires")
+  @@map("inventory_reservations")
+}
+
+model OnlineOrderStatusLog {
+  id          String           @id @default(uuid()) @db.Uuid
+  orderId     String           @map("order_id") @db.Uuid
+  fromStatus  OnlineOrderStatus? @map("from_status")
+  toStatus    OnlineOrderStatus @map("to_status")
+  reason      String?          @map("reason")
+  actorUserId String?          @map("actor_user_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  order       OnlineOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor       User?            @relation("OnlineOrderStatusLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt], name: "idx_online_order_status_logs_order_created")
+  @@index([actorUserId], name: "idx_online_order_status_logs_actor")
+  @@map("online_order_status_logs")
+}
+
+model CatalogAuditLog {
+  id          String            @id @default(uuid()) @db.Uuid
+  entityType  CatalogEntityType @map("entity_type")
+  entityId    String            @map("entity_id")
+  action      CatalogAction
+  actorUserId String            @map("actor_user_id") @db.Uuid
+  reason      String
+  payload     Json?
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor       User              @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId], name: "idx_catalog_audit_entity")
+  @@index([actorUserId], name: "idx_catalog_audit_actor")
+  @@index([createdAt], name: "idx_catalog_audit_created")
+  @@map("catalog_audit_logs")
+}
+
+model InventoryAdjustment {
+  id               String   @id @default(uuid()) @db.Uuid
+  productId        String   @map("product_id")
+  delta            Int
+  reason           String
+  actorUserId      String   @map("actor_user_id") @db.Uuid
+  previousQuantity Int      @map("previous_quantity")
+  newQuantity      Int      @map("new_quantity")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor            User     @relation("InventoryAdjustmentActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([productId], name: "idx_inventory_adjustments_product")
+  @@index([actorUserId], name: "idx_inventory_adjustments_actor")
+  @@index([createdAt], name: "idx_inventory_adjustments_created")
+  @@map("inventory_adjustments")
+}
